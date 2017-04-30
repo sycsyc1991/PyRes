@@ -28,14 +28,11 @@ class Benefit(object):
 
     def __init__(self, b_id, uid_f, uid_p):
         """
+        建立某个责任，赋予uid，和两种赔付方式的uid
         
         Example:
         
         >>> ben1 = Benefit(1,1,1)
-        
-        >>> Benefit(1,1,1).get_parameter()
-           benifit_id benifits_type       tbl_name
-        0           1         death  CL_2000_1.csv
         
         :param int b_id: 责任uid 
         :param int uid_f: 责任赔付fix金额的uid
@@ -47,18 +44,41 @@ class Benefit(object):
 
     def get_parameter(self):
         """
+        读取责任的参数
         
-        :return:
-        :rtype: tm.pd.DataFrame
+        :return:参数列表的Dataframe
+        :rtype: tm.pd.Dataframe
+        
+        Example:
+        >>> Benefit(1,1,1).get_parameter()
+           benifit_id benifits_type       tbl_name
+        0           1         death  CL_2000_1.csv
+                
         """
         b_t = tm.ReadTable.get_ben_table()
         return b_t[b_t['benifit_id'] == self.b_id]
 
     def get_qx_tbl(self):
+        """
+        读取责任的发生率表
+        
+        :return: 发生率的Dataframe
+        :rtype: tm.pd.Dataframe
+        """
         tbl_name = self.get_parameter()['tbl_name'].values[0]
         return tm.ReadTable.get_mort_table(tbl_name)
 
     def get_ben_sa_fix(self, nb, np, age, polyr):
+        """
+        根据参数确定固定保额
+        
+        :param nb: 保险期间
+        :param np: 缴费期间
+        :param int age: 被保险人年龄
+        :param int polyr: 保单年度 
+        :return: 固定保额
+        :rtype: int
+        """
         if self.uid_f == 0:
             ben = 0
         elif self.uid_f == 1 and (age <= 105) and (age >= 0) and polyr <= 105:
@@ -67,6 +87,16 @@ class Benefit(object):
         return ben
 
     def get_ben_sa_p(self, nb, np, age, polyr):
+        """
+        根据参数确定保费相关保额
+        
+        :param nb: 保险期间
+        :param np: 缴费期间
+        :param int age: 被保险人年龄
+        :param int polyr: 保单年度 
+        :return: 保费相关保额
+        :rtype: int
+        """
         if self.uid_p == 0:
             ben = 0
         elif self.uid_p == 1 and (age <= 105) and (age >= 0):
@@ -76,6 +106,13 @@ class Benefit(object):
 
 
 class Db(Benefit):
+    """
+    死亡责任类，规定BEN_TYPE为death
+
+    Example:
+    >>> db1 = Db(1,1,1)
+    
+    """
     BEN_TYPE = "death"
 
     def __init__(self, b_id, uid_f, uid_p):
@@ -84,12 +121,25 @@ class Db(Benefit):
     pass
 
 
-class Acc(object):
+class Acc(Benefit):
+    """
+    死亡责任类，规定BEN_TYPE为death
 
+    Example:
+    >>> ac1 = Acc(1,1,1)
+
+    """
     BEN_TYPE = "acc"
 
 
 class Ci(Benefit):
+    """
+    死亡责任类，规定BEN_TYPE为death
+
+    Example:
+    >>> ci1 = Ci(1,1,1)
+
+    """
     BEN_TYPE = "ci"
 
     def __init__(self, b_id, uid_f, uid_p):
@@ -99,12 +149,30 @@ class Ci(Benefit):
 
 
 class Plan(object):
-
+    """
+    险种基础类，读取险种，险种类型，险种包含的责任
+    """
     def __init__(self, plan_id):
+        """
+        
+        Example:
+        
+        >>> plan = Plan(10513002)
+        
+        :param int plan_id: 险种代码 
+        """
         self.plan_id = plan_id
     # Plan类以plan_id为索引
 
     def plan_type(self):
+        """
+
+        Example:
+        
+
+        :return: 险种类型参数
+        :rtype: tm.pd.Dataframe
+        """
         pb_t = tm.ReadTable.get_plan_table()
         pb_t = pb_t[pb_t['plan_id'] == self.plan_id]
         return pb_t
@@ -368,6 +436,6 @@ class PricingOd(object):
 
     pass
 
-# a = PricingOd(10513002)
-# print(a.pvr())
+a = PricingOd(10513002)
+print(a.plan())
 
