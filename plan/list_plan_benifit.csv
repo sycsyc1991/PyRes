@@ -1,4 +1,4 @@
-plan_id,benifits_type,benifits_id,sa_uid_f,sa_uid_p
+plan_id,benefit_type,benefit_id,sa_uid_f,sa_uid_p
 10113001,death,1,1,0
 10113001,ci,2,1,0
 10513002,death,1,0,1

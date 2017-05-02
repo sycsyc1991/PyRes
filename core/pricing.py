@@ -51,12 +51,12 @@ class Benefit(object):
         
         Example:
         >>> Benefit(1,1,1).get_parameter()
-           benifit_id benifits_type       tbl_name
-        0           1         death  CL_2000_1.csv
+           benefit_id benefit_type       tbl_name
+        0           1        death  CL_2000_1.csv
                 
         """
         b_t = tm.ReadTable.get_ben_table()
-        return b_t[b_t['benifit_id'] == self.b_id]
+        return b_t[b_t['benefit_id'] == self.b_id]
 
     def get_qx_tbl(self):
         """
@@ -84,6 +84,8 @@ class Benefit(object):
         elif self.uid_f == 1 and (age <= 105) and (age >= 0) and polyr <= 105:
             ben = 1000
             # uid(1) , sa = fixed 1000
+        else:
+            ben = 0
         return ben
 
     def get_ben_sa_p(self, nb, np, age, polyr):
@@ -102,6 +104,8 @@ class Benefit(object):
         elif self.uid_p == 1 and (age <= 105) and (age >= 0):
             ben = min(np, polyr)
             # uid(1), sa = prem payed
+        else:
+            ben = 0
         return ben
 
 
@@ -177,20 +181,27 @@ class Plan(object):
         pb_t = pb_t[pb_t['plan_id'] == self.plan_id]
         return pb_t
 
-    def plan_benifit(self):
+    def plan_benefit(self):
         pb_t = tm.ReadTable.get_plan_table()
         pb_t = pb_t[pb_t['plan_id'] == self.plan_id]
-        return pb_t[['benifits_type', 'benifits_id', 'sa_uid_f', 'sa_uid_p']]
+        return pb_t[['benefit_type', 'benefit_id', 'sa_uid_f', 'sa_uid_p']]
     # 读取Plan下的责任列表
 
     def plan_benifit_count(self):
-        b_count = len(self.plan_benifit().index)
+        b_count = len(self.plan_benefit().index)
         return b_count
     # 责任个数
 
-class PricingOd(object):
 
+class PricingOd(object):
+    """
+    产品定价模块
+    """
     def __init__(self, plan_id):
+        """
+        给定险种代码
+        :param int plan_id: 险种代码 
+        """
         self.plan_id = plan_id
     IssAge = 30
     sa = 1000
@@ -207,43 +218,67 @@ class PricingOd(object):
 
     @staticmethod
     def get_ben(b_id, b_type, uid_f, uid_p):
+        """
+        
+        :param int b_id: 
+        :param str b_type: 
+        :param int uid_f: 
+        :param int uid_p: 
+        :return: Benefit类
+        :rtype: Benefit
+        """
         if b_type == "death":
             ben = Db(b_id, uid_f, uid_p)
         elif b_type == "ci":
             ben = Ci(b_id, uid_f, uid_p)
+        else:
+            ben = Benefit(b_id, uid_f, uid_p)
         return ben
     # 根据type生成Ben类
 
     def ben_list(self):
-        ids = list(self.plan().plan_benifit()['benifits_id'].values)
-        types = list(self.plan().plan_benifit()['benifits_type'].values)
-        uids_f = list(self.plan().plan_benifit()['sa_uid_f'].values)
-        uids_p = list(self.plan().plan_benifit()['sa_uid_p'].values)
-        bens = list(map(self.get_ben, ids, types, uids_f, uids_p))
-        return bens
+        """
+        获取险种对应的Benefit类的list
+        :return: Benefit类的list
+        :rtype: list
+        """
+        ids = list(self.plan().plan_benefit()['benefit_id'].values)
+        types = list(self.plan().plan_benefit()['benefit_type'].values)
+        uid_f = list(self.plan().plan_benefit()['sa_uid_f'].values)
+        uid_p = list(self.plan().plan_benefit()['sa_uid_p'].values)
+        ben_l = list(map(self.get_ben, ids, types, uid_f, uid_p))
+        return ben_l
     # 读表获取plan下的Ben类
 
-    def ben_dict(self):
-        ids = list(self.plan().plan_benifit()['benifits_id'].values)
-        types = list(self.plan().plan_benifit()['benifits_type'].values)
-        bens = map(self.get_ben, ids, types)
-        return dict(zip(types, bens))
-    # 读表获取plan下的Ben类
+    # def ben_dict(self):
+    #     ids = list(self.plan().plan_benifit()['benifits_id'].values)
+    #     types = list(self.plan().plan_benifit()['benifits_type'].values)
+    #     bens = map(self.get_ben, ids, types)
+    #     return dict(zip(types, bens))
+    # # 读表获取plan下的Ben类
 
     def apv_mp_age(self):
+        """
+        :return: model points对应的age列 
+        :rtype: np.ndarray
+        """
         if self.insterm == "105@":
             mp_age = np.array(range(self.IssAge, 106, 1), dtype='int32')
         else:
             mp_age = np.array(range(self.IssAge, self.IssAge + self.insterm, 1), dtype='int32')
         return mp_age
-    # 生成model points对应的age列
 
     def apv_mp_polyr(self):
+        """
+        
+        :return: model points对应的保单年度列
+        :rtype: np.ndarray
+        """
         polyr = np.arange(len(self.apv_mp_age()), dtype='int32') + 1
         return polyr
-    # 生成model points对应的保单难度列
 
-    def get_ben_sa_fix(self, ben):
+    @staticmethod
+    def get_ben_sa_fix(ben):
         get_ben_sa_np = np.frompyfunc(ben.get_ben_sa_fix, 4, 1)
         return get_ben_sa_np
 
@@ -251,7 +286,8 @@ class PricingOd(object):
         return self.get_ben_sa_fix(ben)(self.insterm, self.payterm,
                                         self.apv_mp_age(), self.apv_mp_polyr())
 
-    def get_ben_sa_prem(self, ben):
+    @staticmethod
+    def get_ben_sa_prem(ben):
         get_ben_sa_np = np.frompyfunc(ben.get_ben_sa_p, 4, 1)
         return get_ben_sa_np
 
@@ -437,5 +473,6 @@ class PricingOd(object):
     pass
 
 a = PricingOd(10513002)
-print(a.plan())
+b = Plan(10513002)
+print(a.mp_ben_prem(a.ben_list()[0]))
 
