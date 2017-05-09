@@ -279,21 +279,29 @@ class PricingOd(object):
 
     @staticmethod
     def get_ben_sa_fix(ben):
+        """
+        
+        :param ben: 
+        :return: 生成benefit的fix_sa的获取函数
+        """
         get_ben_sa_np = np.frompyfunc(ben.get_ben_sa_fix, 4, 1)
         return get_ben_sa_np
 
     def mp_ben_fix(self, ben):
-        return self.get_ben_sa_fix(ben)(self.insterm, self.payterm,
-                                        self.apv_mp_age(), self.apv_mp_polyr())
+        return self.get_ben_sa_fix(ben)(self.insterm, self.payterm, self.apv_mp_age(), self.apv_mp_polyr())
 
     @staticmethod
     def get_ben_sa_prem(ben):
+        """
+
+        :param ben: 
+        :return: 生成benefit的prem_sa的获取函数
+        """
         get_ben_sa_np = np.frompyfunc(ben.get_ben_sa_p, 4, 1)
         return get_ben_sa_np
 
     def mp_ben_prem(self, ben):
-        return self.get_ben_sa_prem(ben)(self.insterm, self.payterm,
-                                        self.apv_mp_age(), self.apv_mp_polyr())
+        return self.get_ben_sa_prem(ben)(self.insterm, self.payterm, self.apv_mp_age(), self.apv_mp_polyr())
     # 生成model points中某个ben对应的sa列
 
     # def mp_ben_fix(self):
@@ -312,17 +320,39 @@ class PricingOd(object):
     #     return qx_list
 
     def get_qx_list(self, sex, tbl):
+        """
+        
+        :param sex: 
+        :param tbl: 
+        :return: 读取tbl中的model points对应的行
+        """
         qx_list = tbl[tbl['age'].isin(self.apv_mp_age())]["male" if sex == 0 else "female"]
         return qx_list
-    # 读取tbl中的model points对应的行
 
-    def mp_qx_ben(self, ben):
-        tbl = [x.get_qx_tbl for x in ben]
-        qx = self.get_qx_list(self.sex, tbl).values
+    def adj_qx_list(self, sex, ben):
+        """
+        
+        :param sex: 被保险人性别
+        :param ben: 调整发生率的责任
+        :return: qx
+        :rtype: np.ndarray
+        """
+        qx = self.get_qx_list(sex, ben.get_qx_tbl())
         if ben.BEN_TYPE == "death":
             qx = qx * (1 - self.get_qx_list(self.sex, tm.ReadTable.get_mort_table("K_2000_1.csv")).values)
         return qx
-    # 读取ben对应的model points的qx
+
+    def mp_qx_ben_list(self, ben):
+        """
+        
+        :param ben: 责任列表
+        :return: mp对应的ben_list的发生率 
+        """
+        try:
+            qx = [self.adj_qx_list(self.sex, x) for x in ben]
+        except TypeError:
+            qx = self.adj_qx_list(self.sex, ben)
+        return qx
 
     @staticmethod
     def get_load_list(payterm, tbl_name):
@@ -333,44 +363,47 @@ class PricingOd(object):
         return load_list
     # TODO 拆分首年loading
 
-    # def mp_qx(self, ben):
-    #     qx = self.get_qx_list(self.IssAge, self.sex, ben.get_qx_tbl()).values
-    #     return qx[:len(self.apv_mp_age())]
-
     def mp_ld(self):
+        """
+        
+        :return: loading列 
+        :rtype: np.ndarray
+        """
         loading = self.get_load_list(self.payterm, self.load_tbl_name).values
         loading[np.isnan(loading)] = 0
         return loading[:len(self.apv_mp_age())]
 
     def mp_netp(self):
+        """
+        
+        :return: NP因子
+        :rtype: np.ndarray
+        """
         prem = np.zeros(len(self.apv_mp_age()), dtype='int32')
         prem[:self.payterm] = 1
-        netp = (prem - self.mp_ld()) * self.mp_dx()
+        netp = (prem - self.mp_ld()) * self.mp_dx("boy")
         return netp
     # TODO: 待区分付款与保障lx与db
 
-    @staticmethod
-    def lx_cal(lx, qx):
-        return lx - qx
-    # 单一死亡人数减去
-
-    def mp_lx_init(self):
-        lx = np.ones(len(self.apv_mp_age()))
-        return lx
-
     def mp_lx_cal(self):
+        """
+        
+        :return: mp对应的年末Inforce
+        """
         if [x for x in self.ben_list() if x.BEN_TYPE == "death"].__len__() != 1:
             raise NotImplementedError("death benifit number error")
         # db部分处理
-        ben_death = [x for x in self.ben_list() if x.BEN_TYPE == "death"]
-        # ben_death = filter(lambda x: x.BEN_TYPE == "death", self.ben_list())[0]
-        ben_ci = [x for x in self.ben_list() if x.BEN_TYPE == "ci"]
-        # ben_ci = filter(lambda x: x.BEN_TYPE == "ci", self.ben_list())[0]
-        lx = self.mp_lx_init()
-        qx = self.mp_qx_ben(ben_death)
-        cix = self.mp_qx_ben(ben_ci)
-        for i in self.apv_mp_polyr()[:-1]-1:
-            lx[i+1] = reduce(self.lx_cal, (lx[i], lx[i] * qx[i], lx[i] * cix[i]))
+        qx = self.mp_qx_ben_list(self.ben_list())
+        lx = 1 - reduce(lambda x, y: x + y, qx)
+        lx = lx.cumprod()
+        return lx
+
+    def mp_lx_eop(self):
+        return self.mp_lx_cal()
+
+    def mp_lx_bop(self):
+        lx = np.roll(self.mp_lx_eop(), 1)
+        lx[0] = 1
         return lx
 
     # def mp_lx(self, lx_init):
@@ -385,52 +418,68 @@ class PricingOd(object):
         # TODO: 待区分付款与保障lx与db
 
     def mp_dx(self, phase="moy"):
+        """
+        
+        :param phase: 时间节点 
+        :return: Dx换算函数
+        """
         adj = {
             "boy": 1,
             "moy": 0.5,
             "eoy": 0
         }
-        dx = self.mp_lx_cal() / (1 + self.IntRate) ** (self.apv_mp_polyr() - adj[phase])
+        dx = self.mp_lx_bop() / (1 + self.IntRate) ** (self.apv_mp_polyr() - adj[phase])
         return dx
 
     # Dx calculate
 
     def mp_cx(self, ben):
-        cx = self.mp_dx() * self.mp_qx_ben(ben) / ((1 + self.IntRate) ** 0.5)
+        """
+        
+        :param ben: 责任 
+        :return: Cx换算函数
+        """
+        cx = self.mp_dx("moy") * self.mp_qx_ben_list(ben)
         return cx
     # Cx calculate
 
     def mp_ben_fix_sum(self, ben):
         return sum(self.mp_cx(ben) * self.mp_ben_fix(ben))
 
-    def apv_ben_fix(self):
+    def mp_plan_fix(self):
         return map(self.mp_ben_fix_sum, self.ben_list())
 
     def mp_ben_prem_sum(self, ben):
         return sum(self.mp_cx(ben) * self.mp_ben_prem(ben))
 
-    def apv_ben_prem(self):
+    def mp_plan_prem(self):
         return map(self.mp_ben_prem_sum, self.ben_list())
 
     def gp(self):
-        return round(sum(self.apv_ben_fix())/(sum(self.mp_netp()) - sum(self.apv_ben_prem())), 2)
+        """
+        普通险保费计算公式
+        :return: 标准SA对应的保费,取2位小数
+        :rtype: np.float64
+        """
+        return round(sum(self.mp_plan_fix())/(sum(self.mp_netp()) - sum(self.mp_plan_prem())), 2)
 
-    # CV part
     def mp_dx_cv(self, phase="moy"):
+        """
+        CV的换算函数
+        :param phase: 
+        :return: 
+        """
         adj = {
             "boy": 1,
             "moy": 0.5,
             "eoy": 0
         }
-        dx = self.mp_lx_cal() / (1 + self.IntRate_CV) ** (self.apv_mp_polyr() - adj[phase])
+        dx = self.mp_lx_bop() / (1 + self.IntRate_CV) ** (self.apv_mp_polyr() - adj[phase])
         return dx
 
-    # Dx calculate
-
-    # Dx calculate
 
     def mp_cx_cv(self, ben):
-        cx = self.mp_dx_cv() * self.mp_qx_ben(ben)
+        cx = self.mp_dx_cv() * self.mp_qx_ben_list(ben)
         return cx
 
     def mp_netp_cv(self):
@@ -470,9 +519,15 @@ class PricingOd(object):
         pvr = np.roll(pvr[::-1].cumsum()[::-1] / self.mp_dx_cv("boy"), -1)
         return pvr
 
+    def cv(self):
+        k = 0.8
+        r = np.fmin(k + self.apv_mp_polyr() * (1 - k) / np.fmin(20, self.payterm), 1)
+        cv = self.pvr() * r
+        return cv
+
     pass
 
 a = PricingOd(10513002)
-b = Plan(10513002)
-print(a.mp_ben_prem(a.ben_list()[0]))
+#print(a.cv())
+
 
