@@ -13,7 +13,7 @@ class Stat(object):
     sa = 1000
     sex = 0
     payterm = 10
-    insterm = 75
+    insterm = 76
     load_tbl_name = "Loading_10513002"
     IntRate = 0.035
     method = "FPT"
@@ -172,5 +172,5 @@ class Stat(object):
 
     pass
 
-a = Stat(10513002)
-print(a.stat())
+# a = Stat(10513002)
+# print(a.stat())

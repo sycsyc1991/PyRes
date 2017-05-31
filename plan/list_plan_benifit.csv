@@ -3,3 +3,6 @@ plan_id,benefit_type,benefit_id,sa_uid_f,sa_uid_p
 10113001,ci,2,1,0
 10513002,death,1,0,1
 10513002,ci,2,1,0
+20313001,death,1,0,2
+20313001,annuity,3,2,0
+20313001,endow,4,0,3

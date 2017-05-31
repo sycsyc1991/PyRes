@@ -68,27 +68,28 @@ class Benefit(object):
         tbl_name = self.get_parameter()['tbl_name'].values[0]
         return tm.ReadTable.get_mort_table(tbl_name)
 
-    def get_ben_sa_fix(self, nb, np, age, polyr):
+    def get_ben_sa_fix(self, nb, np, age, polyr, mat):
         """
-        根据参数确定固定保额
-        
+        根据参数确定保费相关保额
+
         :param nb: 保险期间
         :param np: 缴费期间
         :param int age: 被保险人年龄
         :param int polyr: 保单年度 
-        :return: 固定保额
+        :return: 保费相关保额
         :rtype: int
         """
-        if self.uid_f == 0:
+        if self.uid_p == 0:
             ben = 0
-        elif self.uid_f == 1 and (age <= 105) and (age >= 0) and polyr <= 105:
+        elif self.uid_p == 1 and (age < mat) and (age >= 0):
             ben = 1000
-            # uid(1) , sa = fixed 1000
+            # uid(1), sa = prem payed
         else:
             ben = 0
         return ben
+    pass
 
-    def get_ben_sa_p(self, nb, np, age, polyr):
+    def get_ben_sa_p(self, nb, np, age, polyr, mat):
         """
         根据参数确定保费相关保额
         
@@ -101,9 +102,12 @@ class Benefit(object):
         """
         if self.uid_p == 0:
             ben = 0
-        elif self.uid_p == 1 and (age <= 105) and (age >= 0):
+        elif self.uid_p == 1 and (age < mat) and (age >= 0):
             ben = min(np, polyr)
             # uid(1), sa = prem payed
+        elif self.uid_p == 2 and (age < mat) and (age >= 0):
+            ben = 1.05 * min(np, polyr)
+            # uid_p(2), sa = 1.05 * prem payed
         else:
             ben = 0
         return ben
@@ -150,6 +154,40 @@ class Ci(Benefit):
         Benefit.__init__(self, b_id, uid_f, uid_p)
 
     pass
+
+class Ann(Benefit):
+    """
+    年金类，规定BEN_TYPE为ann
+    """
+    BEN_TYPE = "ann"
+
+    def __init__(self, b_id, uid_f, uid_p):
+        Benefit.__init__(self, b_id, uid_f, uid_p)
+
+    def get_ben_sa_fix(self, nb, np, age, polyr, mat):
+        """
+        根据参数确定固定保额
+
+        :param nb: 保险期间
+        :param np: 缴费期间
+        :param int age: 被保险人年龄
+        :param int polyr: 保单年度 
+        :return: 固定保额
+        :rtype: int
+        """
+        if self.uid_f == 2:
+            # uid(2) , sa = ann 1000 sa
+            if polyr == 3:
+                ben = 300
+            elif age == 59:
+                ben = 600
+            elif (age < (mat-1)) and (age > 59):
+                ben = 200
+            elif (polyr <= 2) or (age >= (mat-1)):
+                ben = 0
+            else:
+                ben = 100
+        return ben
 
 
 class Plan(object):
@@ -203,14 +241,24 @@ class PricingOd(object):
         :param int plan_id: 险种代码 
         """
         self.plan_id = plan_id
+    # IssAge = 30
+    # sa = 1000
+    # sex = 0
+    # payterm = 10
+    # insterm = 76
+    # load_tbl_name = "Loading_10513002"
+    # IntRate = 0.035
+    # IntRate_CV = 0.055
+
     IssAge = 30
     sa = 1000
     sex = 0
     payterm = 10
-    insterm = 75
-    load_tbl_name = "Loading_10513002"
-    IntRate = 0.035
-    IntRate_CV = 0.055
+    insterm = 50
+    load_tbl_name = "Loading_20313001"
+    IntRate = 0.025
+    IntRate_CV = 0.045
+    mat = 80
 
     def plan(self):
         return Plan(self.plan_id)
@@ -231,8 +279,10 @@ class PricingOd(object):
             ben = Db(b_id, uid_f, uid_p)
         elif b_type == "ci":
             ben = Ci(b_id, uid_f, uid_p)
+        elif b_type == "annuity":
+            ben = Ann(b_id, uid_f, uid_p)
         else:
-            ben = Benefit(b_id, uid_f, uid_p)
+            ben = Benefit(b_id,uid_f,uid_p)
         return ben
     # 根据type生成Ben类
 
@@ -284,7 +334,7 @@ class PricingOd(object):
         :param ben: 
         :return: 生成benefit的fix_sa的获取函数
         """
-        get_ben_sa_np = np.frompyfunc(ben.get_ben_sa_fix, 4, 1)
+        get_ben_sa_np = np.frompyfunc(ben.get_ben_sa_fix, 5, 1)
         return get_ben_sa_np
 
     def mp_ben_fix(self, ben):
@@ -297,11 +347,11 @@ class PricingOd(object):
         :param ben: 
         :return: 生成benefit的prem_sa的获取函数
         """
-        get_ben_sa_np = np.frompyfunc(ben.get_ben_sa_p, 4, 1)
+        get_ben_sa_np = np.frompyfunc(ben.get_ben_sa_p, 5, 1)
         return get_ben_sa_np
 
     def mp_ben_prem(self, ben):
-        return self.get_ben_sa_prem(ben)(self.insterm, self.payterm, self.apv_mp_age(), self.apv_mp_polyr())
+        return self.get_ben_sa_prem(ben)(self.insterm, self.payterm, self.apv_mp_age(), self.apv_mp_polyr(), self.mat)
     # 生成model points中某个ben对应的sa列
 
     # def mp_ben_fix(self):
@@ -337,9 +387,13 @@ class PricingOd(object):
         :return: qx
         :rtype: np.ndarray
         """
-        qx = self.get_qx_list(sex, ben.get_qx_tbl())
-        if ben.BEN_TYPE == "death":
-            qx = qx * (1 - self.get_qx_list(self.sex, tm.ReadTable.get_mort_table("K_2000_1.csv")).values)
+        if (ben.BEN_TYPE == "ann") or (ben.BEN_TYPE == "endow"):
+            qx = np.zeros(len(self.apv_mp_age()))
+        else:
+            qx = self.get_qx_list(sex, ben.get_qx_tbl())
+        if [x for x in self.ben_list() if x.BEN_TYPE == "ci"].__len__() != 0:
+            if ben.BEN_TYPE == "death":
+                qx = qx * (1 - self.get_qx_list(self.sex, tm.ReadTable.get_mort_table("K_2000_1.csv")).values)
         return qx
 
     def mp_qx_ben_list(self, ben):
@@ -439,7 +493,10 @@ class PricingOd(object):
         :param ben: 责任 
         :return: Cx换算函数
         """
-        cx = self.mp_dx("moy") * self.mp_qx_ben_list(ben)
+        if ben.BEN_TYPE is "ann":
+            cx = self.mp_lx_eop() / (1 + self.IntRate) ** (self.apv_mp_polyr())
+        else:
+            cx = self.mp_dx("moy") * self.mp_qx_ben_list(ben)
         return cx
     # Cx calculate
 
@@ -454,6 +511,13 @@ class PricingOd(object):
 
     def mp_plan_prem(self):
         return map(self.mp_ben_prem_sum, self.ben_list())
+
+    def mp_end(self):
+        if self.plan.plan_type() is "Endowment":
+            endow =
+        else:
+            endow = 0
+        return endow
 
     def gp(self):
         """
@@ -527,7 +591,12 @@ class PricingOd(object):
 
     pass
 
-a = PricingOd(10513002)
-#print(a.cv())
 
+if __name__ == '__main__':
+    a = PricingOd(20313001)
+    a1 = a.ben_list()[1]
+    b = a.mp_cx(a1) * a.mp_ben_fix(a1)
+    print(a.mp_dx("boy"))
+    # print(a.mp_qx_ben_list(a.ben_list()))
+    print(b)
 

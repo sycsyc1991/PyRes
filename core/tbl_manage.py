@@ -11,6 +11,7 @@ class ReadTable(object):
     MORT_TABLE_DIRECTORY = os.path.join(BASE_DIRECTORY, "table")
     SA_TABLE_DIRECTORY = os.path.join(BASE_DIRECTORY, "sa")
     LOADING_TABLE_DIRECTORY = os.path.join(BASE_DIRECTORY, "loading")
+    LAPSE_TABLE_DIRECTORY = os.path.join(BASE_DIRECTORY, "lapse")
 
     @classmethod
     def get_plan_table(cls):
@@ -30,4 +31,9 @@ class ReadTable(object):
     @classmethod
     def get_load_table(cls, tbl_name):
         tbl = pd.read_csv(os.path.join(cls.LOADING_TABLE_DIRECTORY, tbl_name))
+        return tbl
+
+    @classmethod
+    def get_lapse_table(cls, tbl_name):
+        tbl = pd.read_csv(os.path.join(cls.LAPSE_TABLE_DIRECTORY, tbl_name))
         return tbl
